@@ -2,11 +2,12 @@
 
 python3 rig_fox.py in.glb out.glb [preview_dir]
 
-- normalises the head: front faces glTF +Z, height 1, centred
+- normalises the head: front faces glTF +Z, height 1, centred; welds seams and decimates
 - finds eyes + nose from the texture (dark pixels on the front surface)
-- cuts a mouth slit under the nose and adds a dark mouth interior behind it
-- adds ARKit-named shape keys (MediaPipe emits the same names), plus ear keys
-- exports a .glb with morph targets, and optionally renders preview stills
+- adds ARKit-named shape keys (MediaPipe emits the same names): jaw, blinks, gaze, smile, brows, plus ear keys
+- builds the mouth as two smooth separate meshes (MouthInterior, Tongue) laid on the muzzle and glued to every
+  shape, instead of cutting the skin (a cut follows the generated mesh's bumps and looks jagged)
+- exports a .glb with morph targets, and optionally renders preview stills (Cycles)
 """
 import sys, math
 import bpy, bmesh
