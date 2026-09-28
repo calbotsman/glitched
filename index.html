@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fox Filter</title>
+<meta name="description" content="Webcam filter: your face becomes the Apple fox emoji in 3D, a live voice mask turns your voice into a woman&#39;s, and it glitches into a green wire mesh.">
+<style>
+  :root { --bg:#0b0b0c; --panel:#141416; --ink:#e8e6e1; --dim:#8a8a90; --green:#00ff41; --orange:#ee8a2e; }
+  * { box-sizing:border-box }
+  html,body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.4 -apple-system, Inter, system-ui, sans-serif; }
+  #wrap { display:grid; grid-template-columns: 1fr 300px; height:100vh; }
+  #stage { position:relative; background:#000; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+  #out { width:100%; height:100%; object-fit:contain; background:#000; }
+  #video { position:absolute; opacity:0; pointer-events:none; width:1px; height:1px; }
+  #panel { background:var(--panel); padding:16px; overflow:auto; border-left:1px solid #222; }
+  h1 { font-size:15px; margin:0 0 12px; letter-spacing:.02em }
+  h1 span { color:var(--orange) }
+  .row { margin:10px 0 }
+  label { display:block; color:var(--dim); font-size:12px; margin-bottom:4px }
+  input[type=text], input[type=password], select, textarea { width:100%; background:#0d0d0f; color:var(--ink); border:1px solid #2a2a2e; border-radius:6px; padding:8px; font:inherit }
+  button { background:#232327; color:var(--ink); border:1px solid #333; border-radius:6px; padding:8px 10px; font:inherit; cursor:pointer; margin:2px 4px 2px 0 }
+  button:hover { border-color:#666 }
+  button.on { background:var(--green); color:#000; border-color:var(--green) }
+  button.rec.on { background:#e33; border-color:#e33; color:#fff }
+  #status { font-size:12px; color:var(--dim); white-space:pre-wrap; min-height:3em }
+  #caption { font-size:12px; color:var(--ink); background:#0d0d0f; border-radius:6px; padding:8px; min-height:3.5em; max-height:9em; overflow:auto }
+  kbd { background:#222; border:1px solid #444; border-radius:4px; padding:0 5px; font-size:11px }
+  .small { font-size:11px; color:var(--dim) }
+  a { color:var(--green) }
+  input[type=range] { width:100%; accent-color:var(--green) }
+  details { margin:14px 0; border-top:1px solid #222; padding-top:10px }
+  summary { cursor:pointer; color:var(--dim); font-size:12px }
+  @media (max-width: 760px) { #wrap { grid-template-columns:1fr; grid-template-rows: 1fr auto } #panel { border-left:0; border-top:1px solid #222; max-height:45vh } }
+</style>
+
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="out" width="1280" height="960"></canvas>
+  </div>
+  <div id="panel">
+    <h1>🦊 <span>Fox Filter</span></h1>
+    <div class="row">
+      <button id="btnCam">Start camera</button>
+      <button id="btnMirror" class="on">Mirror</button>
+    </div>
+    <div class="row"><label>Camera</label><select id="camSel"><option value="">Default camera</option></select></div>
+    <div class="row"><button id="btnFox">🦊 Fox mode: mask + glitch + hear voice (<kbd>F</kbd>)</button></div>
+    <div class="row">
+      <label>Tap a key to turn it on or off. Hold the key to flip it only while held.</label>
+      <button id="btnMaskT" class="on">Fox mask: on (<kbd>M</kbd>)</button>
+      <button id="btnVM" class="on">Woman&#39;s voice: on (<kbd>V</kbd>)</button>
+      <button id="btnWire">Wire mesh: off (<kbd>W</kbd>)</button>
+      <button id="btnGlitch" class="on">Glitch: on (<kbd>G</kbd>)</button>
+    </div>
+    <div class="row">
+      <button id="btnBurst">Glitch once</button>
+      <button id="btnHear" class="on">Hear my voice</button>
+    </div>
+    <div class="row"><label>Voice pitch: <span id="pv">205</span> Hz (she learns your own pitch as you talk and moves it here)</label><input id="pitch" type="range" min="165" max="265" step="5" value="205"></div>
+    <div class="row"><label>Voice size: <span id="fv">1.18</span> (higher sounds smaller)</label><input id="formant" type="range" min="1" max="1.35" step="0.01" value="1.18"></div>
+    <div class="row">
+      <button id="btnRec" class="rec">● Record</button>
+      <a id="dl" style="display:none" download="fox-filter.webm">Download clip</a>
+    </div>
+    <div class="row"><div id="status">Waiting for camera.</div></div>
+    <div class="small">Headphones stop the speakers feeding back into the mic. Recording saves the video with your masked voice (or your plain mic when the mask is off).</div>
+    <details>
+      <summary>Gemini voice instead (optional, a few seconds behind you)</summary>
+      <div class="row">
+        <label>Gemini API key (stays in this browser only)</label>
+        <input id="key" type="password" placeholder="AIza…">
+      </div>
+      <div class="row">
+        <label>Voice</label>
+        <select id="voice">
+          <option>Kore</option><option>Aoede</option><option>Leda</option><option>Zephyr</option>
+          <option>Callirrhoe</option><option>Despina</option><option>Laomedeia</option><option>Sulafat</option>
+        </select>
+      </div>
+      <div class="row">
+        <button id="btnVoice">Gemini re-speak: off</button>
+        <button id="btnSay">Say typed line</button>
+      </div>
+      <div class="row"><textarea id="typed" rows="2">The future is collaborative. With me and you, together. Not in a weird way.</textarea></div>
+      <div class="row"><label>Heard / said</label><div id="caption"></div></div>
+      <div class="small">Re-speak transcribes you (Chrome) and has Gemini say it back, deadpan. While it is on, your live mic is muted so only Gemini is heard and recorded.</div>
+    </details>
+  </div>
+</div>
+
+<script type="importmap">{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
+import * as THREE_NS from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+window.THREE = THREE_NS;
+
+const $ = id => document.getElementById(id);
+const NL = String.fromCharCode(10);
+const status = (t) => { $('status').textContent = t; };
+const video = $('video'), out = $('out'), ctx = out.getContext('2d');
+let W = out.width, H = out.height;
+let mirror = true;
+
+// ---------------------------------------------------------------- the fox: Apple's own 🦊 artwork, made 3D
+// The page draws 🦊 from this Mac's Apple Color Emoji font, then lays that exact image onto a surface that is
+// inflated from the emoji's own silhouette and shading. Front-on it is Apple's art untouched; turn your head and
+// it turns in 3D. The glitch shows that same surface as a green wire mesh. Nothing is painted on.
+const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+function emojiSprite() {
+  const size = 640, c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  if (window.__foxSpriteURL && window.__foxImg) { g.drawImage(window.__foxImg, 0, 0, size, size); }
+  else { g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `${Math.round(size * 0.8)}px ${EMOJI_FONT}`; g.fillText('🦊', size / 2, size * 0.54); }
+  const d = g.getImageData(0, 0, size, size).data;
+  let x0 = size, y0 = size, x1 = -1, y1 = -1;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) if (d[(y * size + x) * 4 + 3] > 24) {
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) throw new Error('This browser could not draw the 🦊 emoji.');
+  const pad = 6, w = x1 - x0 + 1 + pad * 2, hh = y1 - y0 + 1 + pad * 2;
+  const s = document.createElement('canvas'); s.width = w; s.height = hh;
+  s.getContext('2d').drawImage(c, x0 - pad, y0 - pad, w, hh, 0, 0, w, hh);
+  return s;
+}
+function depthField(spr) {
+  // inflate from the silhouette (blurred alpha), plus a little relief from the emoji's own shading
+  const w = spr.width, h = spr.height;
+  const m = document.createElement('canvas'); m.width = w; m.height = h; const mg = m.getContext('2d', { willReadFrequently: true });
+  mg.filter = `blur(${Math.round(w * 0.07)}px)`; mg.drawImage(spr, 0, 0); mg.filter = 'none';
+  const blur = mg.getImageData(0, 0, w, h).data;
+  const src = spr.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  return (u, v) => {
+    const x = Math.min(w - 1, Math.max(0, Math.round(u * (w - 1)))), y = Math.min(h - 1, Math.max(0, Math.round((1 - v) * (h - 1))));
+    const k = (y * w + x) * 4, a = blur[k + 3] / 255, lum = (0.3 * src[k] + 0.59 * src[k + 1] + 0.11 * src[k + 2]) / 255;
+    return { z: Math.sqrt(a) * 0.32 + (src[k + 3] > 128 ? lum * 0.03 : 0), inside: src[k + 3] > 100 };
+  };
+}
+function reliefGeometry(THREE, spr, field, seg) {
+  const aspect = spr.height / spr.width;
+  const g = new THREE.PlaneGeometry(1, aspect, seg, Math.round(seg * aspect));
+  const pos = g.attributes.position, uv = g.attributes.uv, keep = [];
+  for (let i = 0; i < pos.count; i++) { const f = field(uv.getX(i), uv.getY(i)); pos.setZ(i, f.z); keep.push(f.inside); }
+  const idx = g.index.array, out = [];
+  for (let t = 0; t < idx.length; t += 3) if (keep[idx[t]] || keep[idx[t + 1]] || keep[idx[t + 2]]) out.push(idx[t], idx[t + 1], idx[t + 2]);
+  g.setIndex(out); g.computeVertexNormals();
+  return g;
+}
+function darkBlob(img, w, h, rx0, rx1, ry0, ry1) {      // bbox of the darkest opaque pixels in a region (fractions)
+  let x0 = w, y0 = h, x1 = -1, y1 = -1, n = 0;
+  for (let y = Math.floor(ry0 * h); y < ry1 * h; y++) for (let x = Math.floor(rx0 * w); x < rx1 * w; x++) {
+    const k = (y * w + x) * 4; if (img[k + 3] < 200) continue;
+    if (0.3 * img[k] + 0.59 * img[k + 1] + 0.11 * img[k + 2] < 70) { n++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  return n > 4 ? { x: (x0 + x1) / 2 / w, y: (y0 + y1) / 2 / h, w: (x1 - x0 + 1) / w, h: (y1 - y0 + 1) / h, bottom: y1 / h } : null;
+}
+// Find her features on the artwork itself so the animation moves the right pixels.
+function features(spr) {
+  const w = spr.width, h = spr.height, img = spr.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  const eL = darkBlob(img, w, h, 0.16, 0.48, 0.36, 0.78) || { x: 0.34, y: 0.59, w: 0.09, h: 0.17 };
+  const eR = darkBlob(img, w, h, 0.52, 0.84, 0.36, 0.78) || { x: 0.66, y: 0.59, w: 0.09, h: 0.17 };
+  const nose = darkBlob(img, w, h, 0.36, 0.64, 0.72, 0.98) || { x: 0.5, y: 0.87, w: 0.16, h: 0.12, bottom: 0.93 };
+  const eye = (e) => [e.x, 1 - e.y, e.w * 0.62, e.h * 0.58];   // UV centre + radii
+  return { eyeL: eye(eL), eyeR: eye(eR), hingeV: 1 - Math.min(0.95, nose.bottom + 0.008) };
+}
+const FOX_VERT = `
+  uniform float uJaw, uAspect, uHingeV, uEarL, uEarR, uEarBaseV;
+  varying vec2 vUv; varying float vJaw;
+  vec2 rot(vec2 p, vec2 c, float a) { float s = sin(a), co = cos(a); p -= c; return c + vec2(p.x * co - p.y * s, p.x * s + p.y * co); }
+  void main() {
+    vUv = uv; vec3 p = position;
+    // jaw: everything under the nose hinges down and forward
+    float below = step(uv.y, uHingeV); vJaw = below;
+    if (below > 0.5) { p.y -= uJaw * 0.085 * uAspect; p.z += uJaw * 0.05; }
+    // ears: the top of the head bends on springs, tips move most
+    float t = smoothstep(uEarBaseV, 1.0, uv.y);
+    float wl = t * (1.0 - smoothstep(0.30, 0.47, uv.x)), wr = t * smoothstep(0.53, 0.70, uv.x);
+    float by = (uEarBaseV - 0.5) * uAspect;
+    p.xy = rot(p.xy, vec2(-0.26, by), uEarL * wl);
+    p.xy = rot(p.xy, vec2( 0.26, by), uEarR * wr);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }`;
+const FOX_FRAG = `
+  uniform sampler2D map; uniform float uJaw, uBlinkL, uBlinkR; uniform vec4 uEyeL, uEyeR; uniform vec2 uLook;
+  varying vec2 vUv; varying float vJaw;
+  vec2 lid(vec2 uv, vec4 e, float b) {        // her own fur, pulled down over the eye
+    vec2 d = (uv - e.xy) / e.zw;
+    if (b > 0.02 && dot(d, d) < 1.0) { float line = 1.0 - 2.0 * b; if (d.y > line) uv.y = e.y + e.w * 1.3 + (d.y - line) * e.w * 0.25; }
+    return uv;
+  }
+  vec2 look(vec2 uv, vec4 e) {                 // slide her own eye inside its socket
+    vec2 d = (uv - e.xy) / (e.zw * 1.6); float r = dot(d, d);
+    return r < 1.0 ? uv - uLook * e.zw * 0.7 * (1.0 - r) : uv;
+  }
+  void main() {
+    vec2 uv = lid(lid(look(look(vUv, uEyeL), uEyeR), uEyeL, uBlinkL), uEyeR, uBlinkR);
+    vec4 c = texture2D(map, uv);
+    if (uJaw > 0.04 && vJaw > 0.01 && vJaw < 0.99) c = vec4(0.17, 0.06, 0.04, 1.0);   // inside of the open mouth
+    if (c.a < 0.35) discard;
+    gl_FragColor = c;
+  }`;
+const S = {};
+// ---------------------------------------------------------------- the rigged 3D fox (assets/fox.glb)
+// A real 3D head with ARKit-named face shapes. MediaPipe reports the same 52 names, so each tracked
+// expression drives the matching shape directly, the way Animoji does. Falls back to the flat emoji
+// relief below when the model is not there.
+const GLB_URL = 'assets/fox.glb';
+async function buildFoxGLB() {
+  const THREE = window.THREE;
+  const head = await fetch(GLB_URL, { method: 'HEAD' }).catch(() => null);
+  if (!head || !head.ok) return false;
+  const gltf = await new GLTFLoader().loadAsync(GLB_URL);
+  const model = gltf.scene;
+  let face = null;
+  model.traverse((o) => { if (o.isMesh && o.morphTargetDictionary && (!face || o.geometry.attributes.position.count > face.geometry.attributes.position.count)) face = o; });
+  if (!face) return false;
+  const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
+  model.position.sub(ctr);
+  const norm = new THREE.Group(); norm.add(model); norm.scale.setScalar(1 / size.y);    // height 1, centred
+  const morphMeshes = [];
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    if (o.morphTargetDictionary) morphMeshes.push(o);
+    if (o.material && o.material.isMeshStandardMaterial) { o.material.metalness = 0; o.material.roughness = Math.max(0.45, o.material.roughness); }
+    if (o.name === 'MouthInterior' || o.name === 'Tongue') {
+      // the mouth is a thin smooth decal lying on the skin: always draw it over the skin, never through it
+      // (a fixed nudge toward the camera, 1-1.5% of the head, so skin bumps can't break its edge into jagged bits;
+      //  small enough that the muzzle still hides it when the head turns away)
+      o.material.side = THREE.DoubleSide; o.material.roughness = o.name === 'Tongue' ? 0.55 : 0.9;
+      const bias = (o.name === 'Tongue' ? 0.015 : 0.011) * size.y;
+      o.material.onBeforeCompile = (sh) => {
+        sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>',
+          `#include <project_vertex>\n mvPosition.z += ${bias.toFixed(6)} * length(modelViewMatrix[0].xyz); gl_Position = projectionMatrix * mvPosition;`);
+      };
+      o.material.customProgramCacheKey = () => 'mouth-' + o.name;
+      o.renderOrder = o.name === 'Tongue' ? 2 : 1;
+    }
+  });
+  // wire twin: same geometry and the SAME morph influences array, so it makes every expression too
+  const wireModel = model.clone(true), wireNorm = new THREE.Group(); wireNorm.add(wireModel); wireNorm.scale.copy(norm.scale);
+  const src = []; model.traverse((o) => { if (o.isMesh) src.push(o); });
+  const dst = []; wireModel.traverse((o) => { if (o.isMesh) dst.push(o); });
+  const wire = new THREE.Group();
+  dst.forEach((o, i) => {
+    o.morphTargetInfluences = src[i].morphTargetInfluences;
+    if (o.name === 'MouthInterior' || o.name === 'Tongue') { o.visible = false; return; }
+    o.material = new THREE.MeshBasicMaterial({ color: 0x050805, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    const lines = new THREE.Mesh(o.geometry, new THREE.MeshBasicMaterial({ color: 0x00ff41, wireframe: true }));
+    lines.morphTargetInfluences = src[i].morphTargetInfluences; lines.morphTargetDictionary = src[i].morphTargetDictionary;
+    o.add(lines);
+  });
+  wire.add(wireNorm);
+  const canvas = document.createElement('canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1);
+  const scene = new THREE.Scene();
+  // bright, soft, emoji lighting: a big even sky, a warm key from above-front, a fill from below so the muzzle stays white
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xfff1e6, 2.1));
+  const key = new THREE.DirectionalLight(0xffffff, 1.5); key.position.set(0.5, 1.4, 2.5); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xfff6ee, 0.9); fill.position.set(-0.3, -1.0, 2.0); scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xffe2c4, 0.5); rim.position.set(-1.5, 0.6, -1.2); scene.add(rim);
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100); camera.position.set(0, 0, 10);
+  const pivot = new THREE.Group(); pivot.add(norm); pivot.add(wire); wire.visible = false; scene.add(pivot);
+  const fbox = new THREE.Box3().setFromObject(norm);
+  Object.assign(S, { glb: true, THREE, renderer, scene, camera, pivot, real: norm, wire, face, morphMeshes, aspect: 1, chinY: fbox.min.y + 0.04, chinZ: fbox.max.z * 0.55,
+    widthRatio: (fbox.max.x - fbox.min.x),
+    sp: { x: 0, y: 0, vx: 0, vy: 0, yaw: 0, vyaw: 0, pitch: 0, vpitch: 0, roll: 0, vroll: 0, init: false },
+    ear: { l: 0, vl: 0, r: 0, vr: 0, twitchAt: performance.now() + 2500, twitchSide: 0, twitchUntil: 0 },
+    last: performance.now() });
+  return true;
+}
+async function buildFox() {
+  if (await buildFoxGLB().catch((e) => { console.warn('fox.glb failed, using the emoji relief', e); return false; })) return;
+  const THREE = window.THREE;
+  if (!THREE) throw new Error('3D engine did not load (check the connection).');
+  if (window.__foxSpriteURL && !window.__foxImg) { const im = new Image(); im.src = window.__foxSpriteURL; await im.decode(); window.__foxImg = im; }
+  const spr = emojiSprite(), field = depthField(spr), F = features(spr), aspect = spr.height / spr.width;
+  const tex = new THREE.CanvasTexture(spr); tex.anisotropy = 4;
+  const canvas = document.createElement('canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100); camera.position.set(0, 0, 10);
+  // the real fox: Apple's art as-is, animated by moving its own surface
+  const uniforms = { map: { value: tex }, uJaw: { value: 0 }, uAspect: { value: aspect }, uHingeV: { value: F.hingeV },
+    uEarL: { value: 0 }, uEarR: { value: 0 }, uEarBaseV: { value: 0.66 }, uBlinkL: { value: 0 }, uBlinkR: { value: 0 },
+    uLook: { value: new THREE.Vector2() }, uEyeL: { value: new THREE.Vector4(...F.eyeL) }, uEyeR: { value: new THREE.Vector4(...F.eyeR) } };
+  const real = new THREE.Mesh(reliefGeometry(THREE, spr, field, 180),
+    new THREE.ShaderMaterial({ uniforms, vertexShader: FOX_VERT, fragmentShader: FOX_FRAG, side: THREE.DoubleSide, transparent: true }));
+  // the wire fox: the same surface, coarser, as green lines clipped to the fox's own silhouette
+  const mask = document.createElement('canvas'); mask.width = spr.width; mask.height = spr.height;
+  const mg = mask.getContext('2d'); mg.drawImage(spr, 0, 0); mg.globalCompositeOperation = 'source-in'; mg.fillStyle = '#ffffff'; mg.fillRect(0, 0, mask.width, mask.height);
+  const maskTex = new THREE.CanvasTexture(mask);
+  const wireGeo = new THREE.PlaneGeometry(1, aspect, 30, Math.round(30 * aspect));
+  { const pos = wireGeo.attributes.position, uv = wireGeo.attributes.uv; for (let i = 0; i < pos.count; i++) pos.setZ(i, field(uv.getX(i), uv.getY(i)).z); wireGeo.computeVertexNormals(); }
+  const wire = new THREE.Group();
+  wire.add(new THREE.Mesh(wireGeo, new THREE.MeshBasicMaterial({ color: 0x050805, map: maskTex, alphaTest: 0.5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 })));
+  wire.add(new THREE.Mesh(wireGeo, new THREE.MeshBasicMaterial({ color: 0x00ff41, map: maskTex, alphaTest: 0.5, wireframe: true, side: THREE.DoubleSide })));
+  const pivot = new THREE.Group(); pivot.add(real); pivot.add(wire); wire.visible = false; scene.add(pivot);
+  Object.assign(S, { chinZ: field(0.5, 0.1).z, THREE, renderer, scene, camera, pivot, real, wire, uniforms, aspect,
+    // spring state: head follow-through, ears
+    sp: { x: 0, y: 0, vx: 0, vy: 0, yaw: 0, vyaw: 0, pitch: 0, vpitch: 0, roll: 0, vroll: 0, init: false },
+    ear: { l: 0, vl: 0, r: 0, vr: 0, twitchAt: performance.now() + 2500, twitchSide: 0, twitchUntil: 0 },
+    last: performance.now() });
+}
+function setWire(on) { S.real.visible = !on; S.wire.visible = on; }
+function spring(pos, vel, target, k, damp, dt) { const a = k * (target - pos) - damp * vel; vel += a * dt; return [pos + vel * dt, vel]; }
+// Advance her motion once per frame (springs, ears, breathing), from the tracked face.
+function animateFox(now, open) {
+  const dt = Math.min(0.05, (now - S.last) / 1000); S.last = now;
+  const sp = S.sp, e = S.ear;
+  if (!sp.init) { Object.assign(sp, { x: pose.x, y: pose.y, yaw: pose.yaw, pitch: pose.pitch, roll: pose.roll, init: true }); }
+  const prevYaw = sp.yaw, prevRoll = sp.roll;
+  [sp.x, sp.vx] = spring(sp.x, sp.vx, pose.x, 220, 22, dt);                 // slightly under-damped: follow-through
+  [sp.y, sp.vy] = spring(sp.y, sp.vy, pose.y, 220, 22, dt);
+  [sp.yaw, sp.vyaw] = spring(sp.yaw, sp.vyaw, pose.yaw * 1.25, 160, 16, dt);
+  [sp.pitch, sp.vpitch] = spring(sp.pitch, sp.vpitch, pose.pitch * 1.15, 160, 16, dt);
+  [sp.roll, sp.vroll] = spring(sp.roll, sp.vroll, pose.roll, 160, 16, dt);
+  // ears lag behind head motion, perk with raised brows, and twitch now and then
+  const swing = (sp.yaw - prevYaw) * 6 + (sp.roll - prevRoll) * 8 - sp.vx * 0.0004;
+  if (now > e.twitchAt) { e.twitchSide = Math.random() < 0.5 ? -1 : 1; e.twitchUntil = now + 140; e.twitchAt = now + 2500 + Math.random() * 5000; }
+  const tw = now < e.twitchUntil ? 0.22 : 0, perk = -pose.brow * 0.18;
+  [e.l, e.vl] = spring(e.l, e.vl, -swing + perk + (e.twitchSide < 0 ? tw : 0), 90, 7, dt);
+  [e.r, e.vr] = spring(e.r, e.vr, -swing - perk - (e.twitchSide > 0 ? tw : 0), 90, 7, dt);
+  const u = S.uniforms || {};
+  if (!S.glb) { u.uEarL.value = Math.max(-0.5, Math.min(0.5, e.l)); u.uEarR.value = Math.max(-0.5, Math.min(0.5, e.r)); }
+  const fz = window.__force || {};                                   // test hook
+  if (S.glb) { driveMorphs(open, fz, e); return; }
+  u.uJaw.value = fz.jaw ?? Math.max(0, Math.min(1, open));
+  u.uBlinkL.value = fz.blink ?? Math.min(1, (mirror ? pose.blinkR : pose.blinkL) * 1.25);
+  u.uBlinkR.value = fz.blink ?? Math.min(1, (mirror ? pose.blinkL : pose.blinkR) * 1.25);
+  u.uLook.value.set(fz.lx ?? (mirror ? 1 : -1) * pose.lookX, fz.ly ?? pose.lookY);
+}
+// Every ARKit-named shape on the model follows the same-named MediaPipe blendshape.
+const GAIN = { jawOpen: 1.5, eyeBlinkLeft: 1.25, eyeBlinkRight: 1.25, mouthSmileLeft: 1.4, mouthSmileRight: 1.4, browInnerUp: 1.4, cheekPuff: 1.5 };
+function driveMorphs(open, fz, e) {
+  driveFaceMorphs(open, fz, e);
+  // the other rigged parts (the tongue) share the face's shape names: copy them across
+  const fd = S.face.morphTargetDictionary, fi = S.face.morphTargetInfluences;
+  for (const m of S.morphMeshes) {
+    if (m === S.face) continue;
+    for (const n in m.morphTargetDictionary) if (fd[n] !== undefined) m.morphTargetInfluences[m.morphTargetDictionary[n]] = fi[fd[n]];
+  }
+}
+function driveFaceMorphs(open, fz, e) {
+  const { morphTargetDictionary: dict, morphTargetInfluences: inf } = S.face, bs = pose.bs || {};
+  const swap = (n) => mirror ? n : n.replace(/Left$/, '#').replace(/Right$/, 'Left').replace(/#$/, 'Right');
+  for (const name in dict) {
+    let v = bs[swap(name)];
+    if (v === undefined) continue;
+    inf[dict[name]] = Math.min(1, v * (GAIN[name] || 1));
+  }
+  if (dict.jawOpen !== undefined) {
+    // a small dead zone keeps the resting mouth shut (no flicker from tracking noise), then an eased,
+    // smoothed rise so a slightly open mouth reads as a clean crescent instead of a twitching slit
+    const raw = Math.min(1, Math.max(open, (bs.jawOpen || 0) * 1.5));
+    const t = Math.max(0, Math.min(1, (raw - 0.06) / 0.9)), target = t * t * (3 - 2 * t) * 0.35 + t * 0.65;
+    S.jawS = (S.jawS ?? 0) + (target - (S.jawS ?? 0)) * (target > (S.jawS ?? 0) ? 0.55 : 0.35);
+    inf[dict.jawOpen] = fz.jaw ?? S.jawS;
+  }
+  if (fz.blink !== undefined) for (const n of ['eyeBlinkLeft', 'eyeBlinkRight']) if (dict[n] !== undefined) inf[dict[n]] = fz.blink;
+  if (fz.lx !== undefined && dict.eyeLookOutLeft !== undefined) { inf[dict.eyeLookOutLeft] = Math.max(0, fz.lx); inf[dict.eyeLookInRight] = Math.max(0, fz.lx); inf[dict.eyeLookInLeft] = Math.max(0, -fz.lx); inf[dict.eyeLookOutRight] = Math.max(0, -fz.lx); }
+  if (fz.smile !== undefined) for (const n of ['mouthSmileLeft', 'mouthSmileRight']) if (dict[n] !== undefined) inf[dict[n]] = fz.smile;
+  // ears: springs from head motion, perk with raised brows
+  const set = (n, v) => { if (dict[n] !== undefined) inf[dict[n]] = Math.max(0, Math.min(1, v)); };
+  set('earBackLeft', -e.l * 2.2); set('earBackRight', e.r * 2.2);
+  set('earOutLeft', e.l * 2.2 + pose.brow * 0.3); set('earOutRight', -e.r * 2.2 + pose.brow * 0.3);
+}
+// Pose the fox over the tracked face and render it into layer canvas g.
+function renderFox(g, wire, open, now) {
+  const { renderer, camera, pivot, sp } = S;
+  if (renderer.domElement.width !== W || renderer.domElement.height !== H) {
+    renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix();
+  }
+  setWire(wire);
+  const halfH = Math.tan(camera.fov * Math.PI / 360) * camera.position.z, halfW = halfH * camera.aspect;
+  const scale = S.glb ? (pose.fw * 3.15 / W) * 2 * halfW / S.widthRatio : (pose.fw * 2.6 / W) * 2 * halfW;   // the fox is wider than a face (ears + tufts)
+  const talk = Math.max(0, Math.min(1, open)), breath = Math.sin(now / 1000 * 1.7) * 0.008;
+  if (S.glb) pivot.scale.set(scale, scale * (1 + breath), scale);
+  else pivot.scale.set(scale * (1 - 0.02 * talk), scale * (1 + 0.03 * talk + breath), scale * 1.5);   // deeper relief so turns read
+  pivot.rotation.set(-sp.pitch, sp.yaw, -sp.roll, 'YXZ');
+  // her chin sits on yours, so the whole face is covered and her mouth is the only mouth
+  const wx = (sp.x / W - 0.5) * 2 * halfW, wy = -(sp.y / H - 0.5) * 2 * halfH;
+  const dx = pose.chx * 2 * halfW / W, dy = -pose.chy * 2 * halfH / H;
+  const pin = S.glb ? new S.THREE.Vector3(0, S.chinY, S.chinZ).multiply(pivot.scale).applyEuler(pivot.rotation) : new S.THREE.Vector3(0, -0.4 * S.aspect, S.chinZ).multiply(pivot.scale).applyEuler(pivot.rotation);   // her chin, after the turn
+  const reach = S.glb ? 1.18 : 1.25;                                  // how far below your chin hers sits
+  pivot.position.set(wx + dx * reach - pin.x, wy + dy * reach - pin.y, -pin.z);
+  renderer.render(S.scene, camera);
+  g.drawImage(renderer.domElement, 0, 0);
+}
+
+// ---------------------------------------------------------------- face tracking
+let landmarker = null, tracking = false;
+const pose = { x: 0, y: 0, chx: 0, chy: 0, fw: 0, yaw: 0, pitch: 0, roll: 0, jaw: 0, blinkL: 0, blinkR: 0, brow: 0, lookX: 0, lookY: 0, seen: false };
+async function initTracker() {
+  status('Loading face tracker…');
+  const fileset = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+  const opts = (delegate) => ({
+    baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task', delegate },
+    runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true,
+  });
+  try { landmarker = await FaceLandmarker.createFromOptions(fileset, opts('GPU')); }
+  catch (e) { landmarker = await FaceLandmarker.createFromOptions(fileset, opts('CPU')); }
+  tracking = true; status((VM.src ? 'Fox on. Talk: your voice comes back as a woman.' : 'Fox on, but the mic is blocked: no voice mask and silent recordings. Allow the mic and reload.') + ' M mask, V voice, W wire, G glitch.');
+}
+const lerp = (a, b, t) => a + (b - a) * t;
+const angLerp = (a, b, t) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
+function track(now) {
+  if (!tracking || video.readyState < 2) return;
+  const r = landmarker.detectForVideo(video, now);
+  if (!r.faceLandmarks || !r.faceLandmarks.length) { pose.seen = false; return; }
+  const lm = r.faceLandmarks[0];
+  const X = (p) => (mirror ? 1 - p.x : p.x) * W, Y = (p) => p.y * H;
+  const ex = (X(lm[33]) + X(lm[263])) / 2, ey = (Y(lm[33]) + Y(lm[263])) / 2;          // eye line centre
+  const fw = Math.hypot(X(lm[454]) - X(lm[234]), Y(lm[454]) - Y(lm[234]));               // cheek to cheek, px
+  const roll = Math.atan2(Y(lm[mirror ? 33 : 263]) - Y(lm[mirror ? 263 : 33]), X(lm[mirror ? 33 : 263]) - X(lm[mirror ? 263 : 33]));
+  const first = !pose.seen;
+  pose.x = first ? ex : lerp(pose.x, ex, 0.5); pose.y = first ? ey : lerp(pose.y, ey, 0.5);
+  pose.fw = first ? fw : lerp(pose.fw, fw, 0.35); pose.roll = angLerp(pose.roll, roll, 0.4);
+  const chx = X(lm[152]) - ex, chy = Y(lm[152]) - ey;                    // eye line to chin, px
+  pose.chx = first ? chx : lerp(pose.chx, chx, 0.4); pose.chy = first ? chy : lerp(pose.chy, chy, 0.4);
+  if (r.facialTransformationMatrixes && r.facialTransformationMatrixes.length) {
+    const m = r.facialTransformationMatrixes[0].data;           // column-major 4x4
+    const yaw = Math.asin(Math.max(-1, Math.min(1, m[8]))), pitch = Math.atan2(-m[9], m[10]);
+    // calibrate: whatever pitch you hold in the first second is "looking straight ahead"
+    // (the tracker reports a frontal face as tilted by ~0.1-0.3 rad)
+    pose.calib = pose.calib || { n: 0, sum: 0 };
+    if (pose.calib.n < 30) { pose.calib.n++; pose.calib.sum += pitch; }
+    const pitch0 = pose.calib.sum / pose.calib.n;
+    pose.yaw = lerp(pose.yaw, (mirror ? -1 : 1) * yaw, 0.35); pose.pitch = lerp(pose.pitch, pitch - pitch0, 0.35);
+  }
+  const bs = {}; if (r.faceBlendshapes && r.faceBlendshapes.length) for (const c of r.faceBlendshapes[0].categories) bs[c.categoryName] = c.score;
+  pose.jaw = lerp(pose.jaw, Math.min(1, (bs.jawOpen || 0) * 1.8), 0.6);
+  pose.blinkL = lerp(pose.blinkL, bs.eyeBlinkLeft || 0, 0.7); pose.blinkR = lerp(pose.blinkR, bs.eyeBlinkRight || 0, 0.7);
+  pose.brow = lerp(pose.brow, Math.min(1, (bs.browInnerUp || 0) * 1.5), 0.4);
+  const b = (k) => bs[k] || 0;                                         // where you look, in your own left/right
+  pose.lookX = lerp(pose.lookX, (b('eyeLookInLeft') + b('eyeLookOutRight') - b('eyeLookOutLeft') - b('eyeLookInRight')) * 0.7, 0.5);
+  pose.lookY = lerp(pose.lookY, (b('eyeLookUpLeft') + b('eyeLookUpRight') - b('eyeLookDownLeft') - b('eyeLookDownRight')) * 0.7, 0.5);
+  pose.bs = pose.bs || {};
+  for (const k in bs) pose.bs[k] = lerp(pose.bs[k] ?? bs[k], bs[k], 0.65);
+  pose.seen = true;
+}
+
+// ---------------------------------------------------------------- voice: mic -> text -> Gemini TTS -> speaker
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const analyser = audioCtx.createAnalyser(); analyser.fftSize = 512;
+const recDest = audioCtx.createMediaStreamDestination();
+analyser.connect(audioCtx.destination); analyser.connect(recDest);
+let speaking = 0, queue = Promise.resolve(), recog = null, voiceOn = false, quietUntil = 0;
+// ---------------------------------------------------------------- voice mask: your mic, moved to a woman's pitch and vocal tract
+const FOX_VOICE = `class FoxVoice extends AudioWorkletProcessor {
+  // target: the pitch (Hz) your voice is moved to on average, whatever your own pitch is; formant: vocal-tract lift
+  static get parameterDescriptors() { return [{ name: 'target', defaultValue: 205 }, { name: 'formant', defaultValue: 1.18 }]; }
+  // A phase vocoder that never has to guess your pitch: every harmonic is moved up on its own
+  // (peak-locked, so the harmonics keep their shape), and the voice's resonances (the vocal tract,
+  // what makes a voice sound male or female) are lifted separately by the formant factor.
+  constructor() {
+    super();
+    const N = this.N = sampleRate > 60000 ? 4096 : 2048, H = this.H = N / 4, K = this.K = N / 2;
+    this.M = 65535;
+    this.inb = new Float32Array(65536); this.acc = new Float32Array(65536);
+    this.n = 0; this.hop = 0; this.o = -(N + H);
+    this.win = new Float32Array(N); for (let i = 0; i < N; i++) this.win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N);
+    this.rev = new Uint32Array(N); const bits = Math.log2(N);
+    for (let i = 0; i < N; i++) { let r = 0; for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b); this.rev[i] = r; }
+    this.cs = new Float64Array(K); this.sn = new Float64Array(K);
+    for (let k = 0; k < K; k++) { this.cs[k] = Math.cos(2 * Math.PI * k / N); this.sn[k] = Math.sin(2 * Math.PI * k / N); }
+    this.re = new Float64Array(N); this.im = new Float64Array(N); this.cr = new Float64Array(N); this.ci = new Float64Array(N);
+    this.mag = new Float64Array(K + 1); this.ph = new Float64Array(K + 1); this.prev = new Float64Array(K + 1); this.fq = new Float64Array(K + 1);
+    this.env = new Float64Array(K + 1); this.orr = new Float64Array(K + 1); this.oi = new Float64Array(K + 1);
+    this.rot = new Float64Array(K + 1); this.rot2 = new Float64Array(K + 1); this.set = new Uint8Array(K + 1);
+    this.peaks = new Int32Array(K);
+    this.nc = Math.round(sampleRate * 0.0018);         // cepstral cut: keeps the vocal-tract shape, drops the harmonics
+    this.floor = 0.002; this.gate = 0;
+    this.logF0 = Math.log(120); this.ratio = 205 / 120;   // learns your speaking pitch within a few seconds of talking
+    this.ar = new Float64Array(N); this.ai = new Float64Array(N);
+  }
+  fft(re, im, inv) {
+    const N = this.N, rev = this.rev, cs = this.cs, sn = this.sn;
+    for (let i = 0; i < N; i++) { const j = rev[i]; if (j > i) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+    for (let size = 2; size <= N; size <<= 1) {
+      const half = size >> 1, step = N / size;
+      for (let i = 0; i < N; i += size) {
+        for (let j = 0, k = 0; j < half; j++, k += step) {
+          const c = cs[k], s = inv ? -sn[k] : sn[k], a = i + j, b = a + half;
+          const tr = re[b] * c + im[b] * s, ti = im[b] * c - re[b] * s;
+          re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+        }
+      }
+    }
+    if (inv) for (let i = 0; i < N; i++) { re[i] /= N; im[i] /= N; }
+  }
+  // your pitch this frame from the autocorrelation (0 when unvoiced); only feeds the slow average
+  pitchOf(re, im) {
+    const { N, K, ar, ai } = this;
+    for (let k = 0; k < N; k++) { const kk = k <= K ? k : N - k; ar[k] = re[kk] * re[kk] + im[kk] * im[kk]; ai[k] = 0; }
+    this.fft(ar, ai, true);
+    const t0 = Math.floor(sampleRate / 420), t1 = Math.ceil(sampleRate / 60);
+    // normalise for the window's own taper so long lags are not unfairly small
+    let best = 0, bt = 0;
+    for (let t = t0; t <= t1; t++) { const v = ar[t] / ar[0] / (1 - t / N); if (v > best) { best = v; bt = t; } }
+    if (best < 0.45) return 0;
+    for (let t = t0; t < bt; t++) {                   // prefer the shortest lag that is nearly as strong (avoids octave-down)
+      const v = ar[t] / ar[0] / (1 - t / N);
+      if (v > best * 0.88 && v >= ar[t - 1] / ar[0] / (1 - (t - 1) / N) && v >= ar[t + 1] / ar[0] / (1 - (t + 1) / N)) { bt = t; break; }
+    }
+    return sampleRate / bt;
+  }
+  frame(target, f) {
+    const { N, H, K, M, inb, win, re, im, cr, ci, mag, ph, prev, fq, env, orr, oi, rot, rot2, set, peaks } = this;
+    let e = 0;
+    for (let i = 0; i < N; i++) { const v = inb[(this.n - N + i) & M]; re[i] = v * win[i]; im[i] = 0; e += v * v; }
+    const rms = Math.sqrt(e / N);
+    // noise gate: follow the room's noise floor so hiss and hum are not turned into chatter
+    this.floor = Math.min(Math.max(this.floor * 1.0015, 0.0004), Math.max(rms, 0.0004));
+    const open = rms > Math.max(0.0025, this.floor * 3.5) ? 1 : 0;
+    this.gate += (open - this.gate) * (open > this.gate ? 0.7 : 0.18);
+    this.fft(re, im, false);
+    if (open) {
+      const f0 = this.pitchOf(re, im);
+      if (f0) { const d = Math.log(f0) - this.logF0; this.logF0 += Math.max(-0.25, Math.min(0.25, d)) * 0.012; }
+    }
+    this.ratio = Math.min(Math.pow(2, 15 / 12), Math.max(Math.pow(2, 3 / 12), target / Math.exp(this.logF0)));
+    const p = this.ratio;
+    let mx = 0;
+    for (let k = 0; k <= K; k++) {
+      const m = Math.hypot(re[k], im[k]), a = Math.atan2(im[k], re[k]);
+      mag[k] = m; ph[k] = a; if (m > mx) mx = m;
+      const ex = 2 * Math.PI * k * H / N; let d = a - prev[k] - ex; d -= 2 * Math.PI * Math.round(d / (2 * Math.PI));
+      fq[k] = (ex + d) / H; prev[k] = a;               // true frequency of whatever sits in this bin (rad/sample)
+    }
+    // spectral envelope (log) by cepstral smoothing
+    for (let k = 0; k < N; k++) { cr[k] = Math.log(mag[k <= K ? k : N - k] + 1e-7); ci[k] = 0; }
+    this.fft(cr, ci, false);
+    for (let k = this.nc; k <= N - this.nc; k++) { cr[k] = 0; ci[k] = 0; }
+    this.fft(cr, ci, true);
+    for (let k = 0; k <= K; k++) env[k] = cr[k];
+    // peaks: each harmonic and its skirt is moved as one piece
+    let np = 0; const thr = mx * 3e-4;
+    for (let k = 2; k < K - 2; k++) if (mag[k] > thr && mag[k] > mag[k - 1] && mag[k] >= mag[k + 1] && mag[k] > mag[k - 2] && mag[k] >= mag[k + 2]) peaks[np++] = k;
+    orr.fill(0); oi.fill(0); set.fill(0);
+    const g = this.gate, top = K - 1;
+    for (let q = 0; q < np; q++) {
+      const kp = peaks[q];
+      let lo = 0, hi = K;
+      if (q > 0) { lo = peaks[q - 1]; for (let k = peaks[q - 1]; k < kp; k++) if (mag[k] < mag[lo]) lo = k; lo++; }
+      if (q + 1 < np) { hi = kp; for (let k = kp; k < peaks[q + 1]; k++) if (mag[k] < mag[hi]) hi = k; }
+      const s = Math.round(kp * p) - kp, kq = kp + s;
+      if (kq >= top) break;
+      let r = rot[kq] + (p - 1) * fq[kp] * H; r -= 2 * Math.PI * Math.round(r / (2 * Math.PI));
+      for (let k = lo; k <= hi; k++) {
+        const j = k + s; if (j < 1 || j >= top) continue;
+        const u = j / f, u0 = Math.floor(u), w = u - u0;
+        const ew = u0 + 1 <= K ? env[u0] + (env[u0 + 1] - env[u0]) * w : env[K] - 4;   // above the old top: fade out
+        const m = mag[k] * Math.exp(ew - env[k]) * g, a = ph[k] + r;
+        orr[j] += m * Math.cos(a); oi[j] += m * Math.sin(a); rot2[j] = r; set[j] = 1;
+      }
+    }
+    // carry each bin's phase rotation forward (gaps take their left neighbour's) for the next frame
+    let last = 0; for (let j = 0; j <= K; j++) { if (set[j]) last = rot2[j]; rot[j] = set[j] ? rot2[j] : last; }
+    for (let j = 0; j <= K; j++) { re[j] = orr[j]; im[j] = oi[j]; }
+    im[0] = 0; im[K] = 0;
+    for (let j = 1; j < K; j++) { re[N - j] = re[j]; im[N - j] = -im[j]; }
+    this.fft(re, im, true);
+    const norm = 2 / 3;                                  // Hann analysis x Hann synthesis at 4x overlap sums to 1.5
+    for (let i = 0; i < N; i++) this.acc[(this.n - N + i) & M] += re[i] * win[i] * norm;
+  }
+  process(inputs, outputs, params) {
+    const inp = inputs[0] && inputs[0][0], out = outputs[0][0], B = out.length, { inb, acc, M } = this;
+    const p = params.target[0], f = params.formant[0];
+    for (let i = 0; i < B; i++) {
+      inb[this.n & M] = inp ? inp[i] : 0; this.n++;
+      if (++this.hop === this.H) { this.hop = 0; this.frame(p, f); }
+    }
+    for (let i = 0; i < B; i++) { const k = this.o & M; out[i] = this.o >= 0 ? acc[k] : 0; acc[k] = 0; this.o++; }
+    for (let c = 1; c < outputs[0].length; c++) outputs[0][c].set(out);
+    return true;
+  }
+}
+registerProcessor('fox-voice', FoxVoice);
+`;
+const VM = { on: true, hear: true, src: null, node: null };
+const micBus = audioCtx.createGain(), micMeter = audioCtx.createAnalyser(), hearGain = audioCtx.createGain();
+micMeter.fftSize = 512; micBus.connect(recDest); micBus.connect(micMeter); micBus.connect(hearGain); hearGain.connect(audioCtx.destination);
+const lowCut = audioCtx.createBiquadFilter(); lowCut.type = 'highpass'; lowCut.frequency.value = 110;
+const air = audioCtx.createBiquadFilter(); air.type = 'peaking'; air.frequency.value = 3200; air.Q.value = 0.8; air.gain.value = 3;
+const level = audioCtx.createDynamicsCompressor();                     // evens out loud and soft words
+level.threshold.value = -30; level.knee.value = 12; level.ratio.value = 4; level.attack.value = 0.004; level.release.value = 0.2;
+const makeup = audioCtx.createGain(); makeup.gain.value = 2.2;
+lowCut.connect(air); air.connect(level); level.connect(makeup); makeup.connect(micBus);
+function vmParams() {
+  if (!VM.node) return;
+  VM.node.parameters.get('target').value = +$('pitch').value;
+  VM.node.parameters.get('formant').value = +$('formant').value;
+}
+function vmRoute() {
+  if (!VM.src) return;
+  try { VM.src.disconnect(); } catch {} try { VM.node && VM.node.disconnect(); } catch {}
+  if (VM.on && VM.node) { VM.src.connect(VM.node); VM.node.connect(lowCut); } else VM.src.connect(micBus);
+  micBus.gain.value = voiceOn ? 0 : 1;
+  hearGain.gain.value = VM.hear ? 1 : 0;
+}
+async function startMic(stream) {
+  VM.src = audioCtx.createMediaStreamSource(stream);
+  try {
+    await audioCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([FOX_VOICE], { type: 'text/javascript' })));
+    VM.node = new AudioWorkletNode(audioCtx, 'fox-voice'); vmParams();
+  } catch (e) { status('Voice mask could not start (' + e.message + '). Your plain mic will be recorded.'); }
+  vmRoute();
+}
+window.__fox = { S, pose, VM, audioCtx, micLevel: () => micLevel(), recTracks: () => recDest.stream.getAudioTracks() };   // for tests
+function micLevel() {
+  const d = new Uint8Array(micMeter.fftSize); micMeter.getByteTimeDomainData(d);
+  let s = 0; for (const v of d) { const x = (v - 128) / 128; s += x * x; }
+  return Math.min(1, Math.sqrt(s / d.length) * 6);
+}
+function envelope() {
+  const d = new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(d);
+  let s = 0; for (const v of d) { const x = (v - 128) / 128; s += x * x; }
+  return Math.min(1, Math.sqrt(s / d.length) * 6);
+}
+async function geminiTTS(text) {
+  const k = $('key').value.trim(); if (!k) throw new Error('No Gemini API key.');
+  const body = { contents: [{ parts: [{ text: `Say this in a dry, deadpan, flat delivery, like dry comedy: ${text}` }] }],
+    generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: $('voice').value } } } } };
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(k)}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const j = await res.json();
+  const part = j.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+  if (!part) throw new Error('Gemini returned no audio.');
+  const bytes = Uint8Array.from(atob(part.inlineData.data), c => c.charCodeAt(0));
+  const rate = parseInt((part.inlineData.mimeType.match(/rate=([0-9]+)/) || [0, 24000])[1]);
+  const pcm = new Int16Array(bytes.buffer, 0, Math.floor(bytes.byteLength / 2));
+  const buf = audioCtx.createBuffer(1, pcm.length, rate); const ch = buf.getChannelData(0);
+  for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+  return buf;
+}
+function say(text) {
+  const clean = text.trim(); if (!clean) return;
+  $('caption').textContent += NL + '→ ' + clean; $('caption').scrollTop = 1e9;
+  queue = queue.then(async () => {
+    try {
+      const buf = await geminiTTS(clean);
+      await audioCtx.resume();
+      const src = audioCtx.createBufferSource(); src.buffer = buf; src.connect(analyser);
+      speaking++; src.start();
+      await new Promise(r => { src.onended = r; });
+      speaking--; quietUntil = performance.now() + 600;
+    } catch (e) { speaking = 0; status('Voice error: ' + e.message); }
+  });
+}
+function startRecog() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { status('This browser has no speech recognition. Use Chrome.'); return false; }
+  recog = new SR(); recog.continuous = true; recog.interimResults = true; recog.lang = 'en-US';
+  recog.onresult = (ev) => {
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const t = ev.results[i][0].transcript;
+      if (speaking > 0 || performance.now() < quietUntil) continue;   // that's her voice coming back through the mic
+      if (ev.results[i].isFinal) say(t); else { $('caption').textContent = $('caption').textContent.split(NL).filter(l => !l.startsWith('…')).join(NL) + NL + '…' + t; }
+    }
+  };
+  recog.onerror = (e) => status('Speech recognition: ' + e.error + (e.error === 'not-allowed' ? ' (allow the mic, or open this page from an https link)' : ''));
+  recog.onend = () => { if (voiceOn) try { recog.start(); } catch {} };
+  recog.start(); return true;
+}
+
+// ---------------------------------------------------------------- glitch grammar (Zara's score, Pell's values)
+const G = { level: 0, until: 0, bands: [], rgb: 0, holdWire: false, maskOff: false };
+let autoOn = true, nextAuto = performance.now() + 6000;
+const Hs = [18, 44, 96], DXs = [6, 22, 58];
+function makeBands(n, wireFrac, dxScale = 1) {
+  const bands = []; let y = 0; const cuts = [];
+  for (let i = 0; i < n; i++) cuts.push(40 + Math.random() * 900); cuts.sort((a, b) => a - b);
+  for (const c of cuts) { const h = Hs[(Math.random() * 3) | 0], dx = DXs[(Math.random() * 3) | 0] * (Math.random() < 0.5 ? -1 : 1) * dxScale;
+    if (c > y) bands.push({ y0: y, y1: c, wire: wireFrac >= 0.5, dx: 0 });
+    bands.push({ y0: c, y1: Math.min(1000, c + h), wire: Math.random() < wireFrac, dx }); y = Math.min(1000, c + h); }
+  if (y < 1000) bands.push({ y0: y, y1: 1000, wire: wireFrac >= 0.5, dx: 0 });
+  return bands;
+}
+function burst(kind) {           // 'tremor' | 'hard'
+  const now = performance.now();
+  if (kind === 'tremor') { G.level = 1; G.until = now + 70; G.bands = makeBands(2, 0, 0.5); G.rgb = 0; return; }
+  G.level = 3; G.until = now + 140; G.bands = makeBands(7, 0.6); G.rgb = 9;
+  G.holdUntil = now + 1400 + Math.random() * 800;
+}
+
+// ---------------------------------------------------------------- frame loop
+const layers = [document.createElement('canvas'), document.createElement('canvas')];
+function layer(i, wire, open, now) {
+  const c = layers[i], g = c.getContext('2d'); g.clearRect(0, 0, W, H);
+  if (pose.seen && !G.maskOff) renderFox(g, wire, open, now);
+  return c;
+}
+function resize(w, h) {
+  if (!w || !h) return;
+  W = out.width = w; H = out.height = h;
+  for (const c of layers) { c.width = w; c.height = h; }
+}
+resize(W, H);
+let recorder = null, chunks = [], recorder_mime = '';
+function frame(now) {
+  requestAnimationFrame(frame);
+  track(now);
+  if (autoOn && now > nextAuto && !G.holdWire) { burst(Math.random() < 0.7 ? 'tremor' : 'hard'); nextAuto = now + 5000 + Math.random() * 7000; }
+  const violent = now < G.until, holding = G.holdUntil && now < G.holdUntil && now >= G.until;
+  const wireFrame = G.holdWire || holding || (violent && G.level === 3);
+  const tear = holding && ((now / 620) | 0) !== (G.lastTear || 0) && (now % 620) < 90;
+  if (tear) { G.lastTear = (now / 620) | 0; G.tearUntil = now + 80; G.tearBands = makeBands(4, 0.9, 0.6); }
+  const tearing = G.tearUntil && now < G.tearUntil;
+
+  const open = speaking > 0 ? envelope() : Math.max(pose.jaw, pose.jaw > 0.05 ? micLevel() * 0.8 : 0);
+  if (pose.seen) animateFox(now, open);
+  const needReal = !wireFrame || violent || tearing, needWire = wireFrame || violent || tearing;
+  const realImg = needReal ? layer(0, false, open, now) : null, wireImg = needWire ? layer(1, true, open, now) : null;
+
+  ctx.save(); ctx.clearRect(0, 0, W, H);
+  if (video.readyState >= 2) {
+    ctx.save(); if (mirror) { ctx.translate(W, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(video, 0, 0, W, H); ctx.restore();
+  }
+  const bands = violent ? G.bands : (tearing ? G.tearBands : null);
+  if (!bands) ctx.drawImage(wireFrame ? wireImg : realImg, 0, 0);
+  else {
+    for (const b of bands) { const y0 = b.y0 * H / 1000, y1 = b.y1 * H / 1000, img = (b.wire ? wireImg : realImg) || realImg || wireImg;
+      ctx.drawImage(img, 0, y0, W, y1 - y0, b.dx * W / 1000, y0, W, y1 - y0); }
+    if (violent && G.rgb && realImg) { ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.5;
+      ctx.filter = 'url(#chanR)'; ctx.drawImage(realImg, G.rgb * W / 1000, 0); ctx.filter = 'url(#chanB)'; ctx.drawImage(realImg, -G.rgb * W / 1000, 0); ctx.restore(); }
+  }
+  ctx.restore();
+  if (now >= G.until && G.level) G.level = 0;
+  if (G.holdUntil && now >= G.holdUntil) { G.holdUntil = 0; if (autoOn) burst('tremor'); }   // snap back with a light tremor
+}
+
+// ---------------------------------------------------------------- UI
+$('btnCam').onclick = async () => {
+  try {
+    await buildFox();
+    await audioCtx.resume();
+    const vid = camConstraints();
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: vid, audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+    catch (e) { stream = await navigator.mediaDevices.getUserMedia({ video: vid, audio: false }); status('No mic access, so no voice mask and silent recordings. Allow the mic and reload.'); }
+    video.srcObject = new MediaStream(stream.getVideoTracks()); await video.play(); resize(video.videoWidth, video.videoHeight);
+    if (stream.getAudioTracks().length) await startMic(new MediaStream(stream.getAudioTracks()));
+    $('btnCam').textContent = 'Camera on'; $('btnCam').classList.add('on');
+    await listCameras();
+    await initTracker(); requestAnimationFrame(frame);
+  } catch (e) { status('Camera problem: ' + e.message + NL + 'Use Chrome, and allow the camera when it asks.'); }
+};
+// Camera picker: lists every camera once the browser has permission, and switches without a reload.
+function camConstraints() {
+  const id = $('camSel').value;
+  return { width: { ideal: 1280 }, height: { ideal: 720 }, ...(id ? { deviceId: { exact: id } } : { facingMode: 'user' }) };
+}
+async function listCameras() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+  const live = video.srcObject?.getVideoTracks()[0]?.getSettings().deviceId;
+  const sel = $('camSel'), keep = sel.value || live || '';
+  sel.innerHTML = '';
+  cams.forEach((d, i) => { const o = document.createElement('option'); o.value = d.deviceId; o.textContent = d.label || 'Camera ' + (i + 1); sel.appendChild(o); });
+  if (!cams.length) sel.innerHTML = '<option value="">No camera found</option>';
+  else sel.value = cams.some((d) => d.deviceId === keep) ? keep : cams[0].deviceId;
+}
+$('camSel').onchange = async () => {
+  if (!video.srcObject) return;                       // not started yet: Start camera uses the choice
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ video: camConstraints(), audio: false });
+    for (const t of video.srcObject.getVideoTracks()) t.stop();
+    video.srcObject = s; await video.play(); resize(video.videoWidth, video.videoHeight);
+    status('Camera: ' + ($('camSel').selectedOptions[0]?.textContent || 'switched'));
+  } catch (e) { status('Could not switch camera: ' + e.message); }
+};
+navigator.mediaDevices?.addEventListener?.('devicechange', () => { listCameras().catch(() => {}); });
+listCameras().catch(() => {});
+$('btnMirror').onclick = (e) => { mirror = !mirror; e.target.classList.toggle('on', mirror); };
+$('btnVoice').onclick = async (e) => {
+  await audioCtx.resume();
+  if (!voiceOn) { if (!$('key').value.trim()) { status('Paste the Gemini API key first.'); return; } voiceOn = startRecog(); }
+  else { voiceOn = false; recog && recog.stop(); }
+  e.target.textContent = voiceOn ? 'Gemini re-speak: listening' : 'Gemini re-speak: off'; e.target.classList.toggle('on', voiceOn); vmRoute();
+};
+$('btnSay').onclick = async () => { await audioCtx.resume(); say($('typed').value); };
+function setHear(on) { VM.hear = on; $('btnHear').classList.toggle('on', on); vmRoute(); paintFox(); }
+$('btnHear').onclick = () => setHear(!VM.hear);
+$('pitch').oninput = () => { $('pv').textContent = $('pitch').value; vmParams(); };
+$('formant').oninput = () => { $('fv').textContent = (+$('formant').value).toFixed(2); vmParams(); };
+// Every switch works the same way: tap (or click) to toggle, hold the key to flip it just while held.
+function paint(id, label, on, key) { $(id).innerHTML = label + ': ' + (on ? 'on' : 'off') + ' (<kbd>' + key + '</kbd>)'; $(id).classList.toggle('on', on); }
+const TOGGLES = {
+  m: () => { G.maskOff = !G.maskOff; paint('btnMaskT', 'Fox mask', !G.maskOff, 'M'); paintFox(); },
+  v: () => { audioCtx.resume(); VM.on = !VM.on; paint('btnVM', 'Woman&#39;s voice', VM.on, 'V'); vmRoute(); },
+  w: () => { G.holdWire = !G.holdWire; paint('btnWire', 'Wire mesh', G.holdWire, 'W'); },
+  // one switch for the whole look: if any of the three is off, turn all three on; if all are on, turn all off
+  f: () => {
+    audioCtx.resume();
+    const on = !(!G.maskOff && autoOn && VM.hear);
+    if (G.maskOff === on) TOGGLES.m();
+    if (autoOn !== on) TOGGLES.g();
+    setHear(on);
+  },
+  g: () => { autoOn = !autoOn; paint('btnGlitch', 'Glitch', autoOn, 'G'); paintFox(); if (autoOn) { burst('hard'); nextAuto = performance.now() + 4000; } else { G.until = 0; G.holdUntil = 0; G.tearUntil = 0; } },
+};
+function paintFox() { $('btnFox').classList.toggle('on', !G.maskOff && autoOn && VM.hear); }
+$('btnFox').onclick = TOGGLES.f; paintFox();
+$('btnMaskT').onclick = TOGGLES.m; $('btnVM').onclick = TOGGLES.v; $('btnWire').onclick = TOGGLES.w; $('btnGlitch').onclick = TOGGLES.g;
+$('btnBurst').onclick = () => burst('hard');
+const keyDownAt = {};
+window.addEventListener('keydown', (e) => {
+  if (['TEXTAREA', 'INPUT', 'SELECT'].includes(e.target.tagName) || e.metaKey || e.ctrlKey) return;
+  const k = e.key.toLowerCase(); if (!TOGGLES[k] || e.repeat) return;
+  keyDownAt[k] = performance.now(); TOGGLES[k]();
+});
+window.addEventListener('keyup', (e) => {
+  const k = e.key.toLowerCase();
+  if (keyDownAt[k] && performance.now() - keyDownAt[k] > 350) TOGGLES[k]();   // it was a hold: flip back
+  delete keyDownAt[k];
+});
+$('btnRec').onclick = (e) => {
+  audioCtx.resume();
+  if (!recorder) {
+    if (!VM.src && !voiceOn) status('Recording without sound: the mic is not on. Allow the mic and restart the camera.');
+    const stream = out.captureStream(30); for (const t of recDest.stream.getAudioTracks()) stream.addTrack(t);
+    const mime = ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+    chunks = []; recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 8e6 } : {});
+    recorder.ondataavailable = (ev) => { if (ev.data.size) chunks.push(ev.data); };
+    recorder.onstop = () => { const type = recorder_mime || 'video/webm'; const url = URL.createObjectURL(new Blob(chunks, { type })); $('dl').href = url; $('dl').download = 'fox-filter.' + (type.includes('mp4') ? 'mp4' : 'webm'); $('dl').style.display = 'inline'; $('dl').textContent = 'Download clip'; };
+    recorder_mime = recorder.mimeType; recorder.start(250); e.target.textContent = '■ Stop'; e.target.classList.add('on');
+  } else { recorder.stop(); recorder = null; e.target.textContent = '● Record'; e.target.classList.remove('on'); }
+};
+try { $('key').value = localStorage.getItem('geminiKey') || ''; } catch {}
+$('key').addEventListener('change', () => { try { localStorage.setItem('geminiKey', $('key').value); } catch {} });
+</script>
+
+<svg width="0" height="0" style="position:absolute">
+  <filter id="chanR"><feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/></filter>
+  <filter id="chanB"><feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"/></filter>
+</svg>
+</body>
+</html>
